@@ -6,21 +6,13 @@
 
 Search, queue and play music with no account, no login and no browser.
 
-[![Stars](https://img.shields.io/github/stars/socatlolmeow/drift?style=flat-square&logo=github&labelColor=191724&color=ebbcba)](https://github.com/socatlolmeow/drift/stargazers)
-[![Forks](https://img.shields.io/github/forks/socatlolmeow/drift?style=flat-square&logo=github&labelColor=191724&color=c4a7e7)](https://github.com/socatlolmeow/drift/network/members)
-[![Issues](https://img.shields.io/github/issues/socatlolmeow/drift?style=flat-square&logo=github&labelColor=191724&color=eb6f92)](https://github.com/socatlolmeow/drift/issues)
-[![Last commit](https://img.shields.io/github/last-commit/socatlolmeow/drift?style=flat-square&logo=git&logoColor=white&labelColor=191724&color=9ccfd8)](https://github.com/socatlolmeow/drift/commits/main)
-[![License](https://img.shields.io/github/license/socatlolmeow/drift?style=flat-square&labelColor=191724&color=f6c177)](LICENSE)
+**[Download Windows x64 Setup](https://github.com/trashpenguin/drift/releases/download/windows-1.7.0/Drift-1.7.0-Windows-x64-Setup.exe)** · **[Windows release and checksums](https://github.com/trashpenguin/drift/releases/tag/windows-1.7.0)**
 
-[![Build](https://img.shields.io/github/actions/workflow/status/socatlolmeow/drift/rust.yml?branch=main&style=flat-square&label=build&logo=githubactions&logoColor=white&labelColor=191724)](https://github.com/socatlolmeow/drift/actions/workflows/rust.yml)
-[![Rust](https://img.shields.io/badge/built%20with-Rust-orange?style=flat-square&logo=rust&labelColor=191724)](https://www.rust-lang.org)
-[![AUR](https://img.shields.io/aur/version/driftmusic-git?style=flat-square&logo=archlinux&logoColor=white&label=AUR&labelColor=191724&color=1793d1)](https://aur.archlinux.org/packages/driftmusic-git)
+This fork of [socatlolmeow/drift](https://github.com/socatlolmeow/drift) adds Windows installers and playback recovery. The installer bundles mpv and yt-dlp.
 
 </div>
 
-<img src="https://github.com/socatlolmeow/drift/blob/main/examples/showcase.gif?raw=true" alt="Drift showcase" />
-
-</div>
+![Drift showcase](examples/showcase.gif)
 
 ---
 
@@ -69,31 +61,22 @@ Drift needs [mpv](https://mpv.io/) for playback and [yt-dlp](https://github.com/
 
 ### Windows Terminal
 
-Run the Windows x64 setup executable to install Drift, mpv, and yt-dlp for your
-account. Start Drift from the Start menu or run `drift.exe` from its install
-folder. See the [Windows guide](docs/windows.md) for setup and uninstall steps.
+Download and run [Drift Setup for Windows x64](https://github.com/trashpenguin/drift/releases/download/windows-1.7.0/Drift-1.7.0-Windows-x64-Setup.exe). It installs Drift, mpv, and yt-dlp for your account and adds Drift to the Start menu. Setup works offline and requires no administrator access. The [Windows guide](docs/windows.md) covers installation and removal.
 
-The Windows x64 release ZIP includes `yt-dlp.exe`. Install `mpv` with Scoop or put `mpv.exe` on your `PATH`.
-If Scoop reports that `mpv` is unavailable, add its Extras bucket with `scoop bucket add extras`.
-
-```powershell
-scoop install mpv
-```
-
-Extract the Windows x64 release ZIP and open its folder in Windows Terminal.
-In a PowerShell tab, check the dependencies and start Drift:
+You can also download the [portable ZIP](https://github.com/trashpenguin/drift/releases/download/windows-1.7.0/Drift-1.7.0-Windows-x64-playback.zip), which includes Drift and yt-dlp. Put `mpv.exe` on your `PATH` or install it with `scoop install mpv` from Scoop's Extras bucket. Extract the ZIP, open the folder in a Windows Terminal PowerShell tab, and run:
 
 ```powershell
 .\drift.exe --check
 .\drift.exe
 ```
 
-If you have the source checkout, build with `cargo build --release --locked`
-using Rust's MSVC toolchain and the Visual Studio C++ build tools. The
-executable is `target\release\drift.exe`. A source build also needs `yt-dlp.exe`
-beside Drift or on `PATH`.
+`--check` shows the version and path for both dependencies. The [release page](https://github.com/trashpenguin/drift/releases/tag/windows-1.7.0) has SHA-256 checksums for both downloads.
+
+To build from source on Windows, install Rust's MSVC toolchain and the Visual Studio C++ build tools, then run `cargo build --release --locked`. The executable is `target\release\drift.exe`. Put mpv and yt-dlp beside it or on your `PATH`.
 
 ### Arch Linux (AUR)
+
+The upstream Drift package is available in the AUR.
 
 ```bash
 yay -S driftmusic-git
@@ -114,7 +97,7 @@ makepkg -si
 Works on Arch, Debian/Ubuntu, Fedora, openSUSE, Void, Alpine and Gentoo. It installs the dependencies and builds Drift with cargo.
 
 ```bash
-git clone https://github.com/socatlolmeow/drift.git
+git clone https://github.com/trashpenguin/drift.git
 cd drift
 ./install.sh
 ```
@@ -124,7 +107,7 @@ cd drift
 Install the dependencies and [Rust](https://rustup.rs/), then:
 
 ```bash
-git clone https://github.com/socatlolmeow/drift.git
+git clone https://github.com/trashpenguin/drift.git
 cd drift
 cargo install --path .
 ```
@@ -136,7 +119,7 @@ This puts `drift` in `~/.cargo/bin/`, which is on your `$PATH` if you installed 
 The repo has a flake that puts `mpv` and `yt-dlp` on Drift's `PATH` for you:
 
 ```bash
-nix run github:socatlolmeow/drift
+nix run github:trashpenguin/drift
 ```
 
 ### Installing mpv and yt-dlp manually
@@ -153,7 +136,7 @@ nix run github:socatlolmeow/drift
 ```bash
 drift                    # start the player
 drift "daft punk"        # start with a search
-drift --check            # check that mpv and yt-dlp are installed
+drift --check            # show dependency versions and paths
 drift --help
 drift --version
 ```
@@ -371,6 +354,8 @@ In the Playlists tab `seek_forward` opens the selected playlist, and `seek_back`
 ## Troubleshooting
 
 **Drift says mpv or yt-dlp is missing.** Run `drift --check` to see which one, and install it with the table in [Installing mpv and yt-dlp manually](#installing-mpv-and-yt-dlp-manually).
+
+**Playback fails with HTTP 403.** Drift refreshes the stream URL once. If it still fails, run `drift --check` to see which copy of yt-dlp Drift is using. Update that copy if needed. Use `:play` to retry the track or `:next` to skip it.
 
 **Playback fails with "Sign in to confirm you're not a bot".** YouTube wants a login. Set `cookies_from_browser` under `[audio]` to a browser you're logged into YouTube with (for example `"firefox"`), then restart Drift. Updating yt-dlp also helps, since YouTube changes things often.
 
