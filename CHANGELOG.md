@@ -7,6 +7,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+- Refresh a failed stream once before stopping on the current track. HTTP 403
+  errors point to `drift --check`, which now prints the paths it resolves for
+  mpv and yt-dlp.
+- Build a Windows x64 release ZIP with a verified yt-dlp executable, mpv setup
+  instructions, and a SHA-256 checksum.
+
 ## [1.7.0] - 2026-11-15
 
 ### Added

@@ -1,6 +1,48 @@
 //! Small platform shims so the rest of the app stays free of `cfg` noise.
 
+use std::path::PathBuf;
 use std::process::Command;
+
+pub fn program_path(name: &str) -> Option<PathBuf> {
+    #[cfg(windows)]
+    let filename = format!("{name}.exe");
+    #[cfg(not(windows))]
+    let filename = name;
+
+    let path = std::env::var_os("PATH").unwrap_or_default();
+    let dirs = std::env::split_paths(&path);
+    #[cfg(windows)]
+    let dirs = {
+        let app_dir = std::env::current_exe()
+            .ok()
+            .and_then(|exe| exe.parent().map(PathBuf::from));
+        let windows = std::env::var_os("SystemRoot").map(PathBuf::from);
+        app_dir
+            .into_iter()
+            .chain(windows.as_ref().map(|root| root.join("System32")))
+            .chain(windows)
+            .chain(dirs)
+    };
+    dirs.map(|dir| dir.join(&filename))
+        .find(|path| {
+            let Ok(metadata) = path.metadata() else {
+                return false;
+            };
+            #[cfg(unix)]
+            {
+                use std::os::unix::fs::PermissionsExt;
+                if metadata.permissions().mode() & 0o111 == 0 {
+                    return false;
+                }
+            }
+            metadata.is_file()
+        })
+        .and_then(|path| std::path::absolute(path).ok())
+}
+
+pub fn command(name: &str) -> Command {
+    Command::new(program_path(name).unwrap_or_else(|| PathBuf::from(name)))
+}
 
 /// Keep child processes from flashing a console window on Windows.
 pub fn no_window(cmd: &mut Command) -> &mut Command {

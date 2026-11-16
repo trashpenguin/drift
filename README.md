@@ -28,6 +28,7 @@ Search, queue and play music with no account, no login and no browser.
 
 - [Features](#features)
 - [Installation](#installation)
+  - [Windows Terminal](#windows-terminal)
   - [Arch Linux (AUR)](#arch-linux-aur)
   - [Install script](#install-script)
   - [From source](#from-source)
@@ -65,6 +66,32 @@ Search, queue and play music with no account, no login and no browser.
 ## Installation
 
 Drift needs [mpv](https://mpv.io/) for playback and [yt-dlp](https://github.com/yt-dlp/yt-dlp) to get the audio streams. Run `drift --check` at any time to see if both are installed.
+
+### Windows Terminal
+
+Run the Windows x64 setup executable to install Drift, mpv, and yt-dlp for your
+account. Start Drift from the Start menu or run `drift.exe` from its install
+folder. See the [Windows guide](docs/windows.md) for setup and uninstall steps.
+
+The Windows x64 release ZIP includes `yt-dlp.exe`. Install `mpv` with Scoop or put `mpv.exe` on your `PATH`.
+If Scoop reports that `mpv` is unavailable, add its Extras bucket with `scoop bucket add extras`.
+
+```powershell
+scoop install mpv
+```
+
+Extract the Windows x64 release ZIP and open its folder in Windows Terminal.
+In a PowerShell tab, check the dependencies and start Drift:
+
+```powershell
+.\drift.exe --check
+.\drift.exe
+```
+
+If you have the source checkout, build with `cargo build --release --locked`
+using Rust's MSVC toolchain and the Visual Studio C++ build tools. The
+executable is `target\release\drift.exe`. A source build also needs `yt-dlp.exe`
+beside Drift or on `PATH`.
 
 ### Arch Linux (AUR)
 
@@ -119,7 +146,7 @@ nix run github:socatlolmeow/drift
 | Debian / Ubuntu | `sudo apt install mpv` and `pipx install yt-dlp` |
 | macOS | `brew install mpv yt-dlp` |
 | Arch | `sudo pacman -S mpv yt-dlp` |
-| Windows | `winget install mpv.net yt-dlp.yt-dlp` or `scoop install mpv yt-dlp` |
+| Windows | `scoop install mpv yt-dlp` |
 
 ## Usage
 
@@ -221,7 +248,7 @@ A step-by-step guide covers setup for Waybar and other status bars, media key bi
 
 ## Configuration
 
-Settings live in `config.toml` inside Drift's config directory (`~/.config/drift/` on Linux). Drift only reads the file and never rewrites it, so your comments are safe. Restart Drift after editing.
+Settings live in `config.toml` inside Drift's config directory (`~/.config/drift/` on Linux, `%APPDATA%\drift\` on Windows). Drift only reads the file and never rewrites it, so your comments are safe. Restart Drift after editing.
 
 ```toml
 [playback]

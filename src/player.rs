@@ -2,7 +2,7 @@ use std::collections::{HashMap, HashSet};
 use std::io::{BufRead, BufReader, Write};
 use std::path::PathBuf;
 use std::process::{Child, Command, Stdio};
-use std::sync::{Mutex, OnceLock};
+use std::sync::{mpsc, Mutex, OnceLock};
 use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
 
 use anyhow::{anyhow, bail, Result};
@@ -135,7 +135,7 @@ impl Player {
     pub fn spawn(volume: u8, on_event: impl Fn(PlayerEvent) + Send + 'static) -> Result<Player> {
         let sock_path = ipc::endpoint();
 
-        let mut cmd = Command::new("mpv");
+        let mut cmd = crate::sys::command("mpv");
         cmd.args([
             "--no-config",
             "--idle=yes",
@@ -216,48 +216,19 @@ impl Player {
         }
         player.send(json!(["request_log_messages", "error"]))?;
 
+        let (tx, rx) = mpsc::channel();
         std::thread::spawn(move || {
-            let mut reason: Option<String> = None;
             for line in BufReader::new(reader).lines() {
                 let Ok(line) = line else { break };
                 let Ok(v) = serde_json::from_str::<Value>(&line) else {
                     continue;
                 };
-                match v.get("event").and_then(Value::as_str) {
-                    Some("log-message") => {
-                        let prefix = v.get("prefix").and_then(Value::as_str).unwrap_or("");
-                        let text = v.get("text").and_then(Value::as_str).unwrap_or("").trim();
-                        match text.strip_prefix("ERROR: ") {
-                            Some(t) if prefix == "ytdl_hook" => reason = Some(ytdl_reason(t)),
-                            _ if reason.is_none()
-                                && !text.is_empty()
-                                && !text.starts_with("Failed to open") =>
-                            {
-                                reason = Some(text.lines().next().unwrap_or(text).to_string());
-                            }
-                            _ => {}
-                        }
-                        continue;
-                    }
-                    Some("start-file") => reason = None,
-                    _ => {}
+                if tx.send(v).is_err() {
+                    break;
                 }
-                let Some(mut ev) = parse_event(&v) else {
-                    continue;
-                };
-                match &mut ev {
-                    PlayerEvent::LoadError(msg) => {
-                        if let Some(r) = reason.take() {
-                            *msg = r;
-                        }
-                    }
-                    PlayerEvent::FileLoaded => reason = None,
-                    _ => {}
-                }
-                on_event(ev);
             }
-            on_event(PlayerEvent::Died);
         });
+        std::thread::spawn(move || forward_events(rx, on_event));
 
         Ok(player)
     }
@@ -329,7 +300,7 @@ const KEEP_FILES: usize = 40;
 
 /// Base yt-dlp command with the user's cookie setting applied.
 fn ytdlp(audio: &Audio) -> Command {
-    let mut cmd = Command::new("yt-dlp");
+    let mut cmd = crate::sys::command("yt-dlp");
     if let Some(browser) = audio.cookies() {
         cmd.arg("--cookies-from-browser").arg(browser);
     }
@@ -504,6 +475,24 @@ fn cache_get(id: &str) -> Option<Stream> {
     (Instant::now() < *expires).then(|| stream.clone())
 }
 
+pub fn invalidate_stream(id: &str) {
+    if let Ok(mut cache) = url_cache().lock() {
+        cache.remove(id);
+    }
+}
+
+pub fn is_http_forbidden(message: &str) -> bool {
+    let message = message.to_ascii_lowercase();
+    [
+        "http error 403",
+        "http 403",
+        "403 forbidden",
+        "status code 403",
+    ]
+    .iter()
+    .any(|pattern| message.contains(pattern))
+}
+
 fn cache_put(id: &str, stream: Stream, ttl: Duration) {
     if let Ok(mut cache) = url_cache().lock() {
         let now = Instant::now();
@@ -667,6 +656,74 @@ pub fn ytdl_reason(text: &str) -> String {
     text.trim().to_string()
 }
 
+fn forward_events(rx: mpsc::Receiver<Value>, on_event: impl Fn(PlayerEvent)) {
+    let mut reason = None;
+    let mut failure: Option<(String, Instant)> = None;
+    loop {
+        // mpv can deliver end-file before it delivers the queued diagnostic.
+        let event = if let Some((_, deadline)) = &failure {
+            let wait = deadline.saturating_duration_since(Instant::now());
+            if wait.is_zero() {
+                Err(mpsc::RecvTimeoutError::Timeout)
+            } else {
+                rx.recv_timeout(wait)
+            }
+        } else {
+            rx.recv().map_err(|_| mpsc::RecvTimeoutError::Disconnected)
+        };
+        let value = match event {
+            Ok(value) => value,
+            Err(error) => {
+                if let Some((fallback, _)) = failure.take() {
+                    on_event(PlayerEvent::LoadError(reason.take().unwrap_or(fallback)));
+                }
+                if error == mpsc::RecvTimeoutError::Disconnected {
+                    break;
+                }
+                continue;
+            }
+        };
+        match value.get("event").and_then(Value::as_str) {
+            Some("log-message") => {
+                let prefix = value.get("prefix").and_then(Value::as_str).unwrap_or("");
+                let text = value
+                    .get("text")
+                    .and_then(Value::as_str)
+                    .unwrap_or("")
+                    .trim();
+                if is_http_forbidden(text) {
+                    reason = Some("HTTP 403 Forbidden".into());
+                } else if reason.is_none()
+                    && !text.is_empty()
+                    && !text.starts_with("Failed to open")
+                {
+                    reason = match text.strip_prefix("ERROR: ") {
+                        Some(text) if prefix == "ytdl_hook" => Some(ytdl_reason(text)),
+                        _ => text.lines().next().map(str::to_string),
+                    };
+                }
+            }
+            Some("start-file") => {
+                failure = None;
+                reason = None;
+            }
+            _ => match parse_event(&value) {
+                Some(PlayerEvent::LoadError(fallback)) => {
+                    failure = Some((fallback, Instant::now() + Duration::from_millis(150)));
+                }
+                Some(event) => {
+                    if matches!(event, PlayerEvent::FileLoaded) {
+                        reason = None;
+                    }
+                    on_event(event);
+                }
+                None => {}
+            },
+        }
+    }
+    on_event(PlayerEvent::Died);
+}
+
 fn parse_event(v: &Value) -> Option<PlayerEvent> {
     match v.get("event")?.as_str()? {
         "property-change" => {
@@ -737,7 +794,10 @@ mod tests {
         };
         let dir = std::env::temp_dir().join("drift downloads");
         let cmd = download_command(&download_test_track(), &audio, &dir).unwrap();
-        assert_eq!(cmd.get_program(), "yt-dlp");
+        assert_eq!(
+            std::path::Path::new(cmd.get_program()).file_stem().unwrap(),
+            "yt-dlp"
+        );
         let args: Vec<_> = cmd.get_args().map(|arg| arg.to_string_lossy()).collect();
         assert_eq!(
             args,
@@ -938,5 +998,23 @@ mod tests {
 
         let v: Value = serde_json::from_str(r#"{"error":"success","request_id":0}"#).unwrap();
         assert!(parse_event(&v).is_none());
+    }
+
+    #[test]
+    fn late_mpv_log_explains_load_failure() {
+        let (tx, rx) = mpsc::channel();
+        tx.send(json!({"event": "end-file", "reason": "error", "file_error": "loading failed"}))
+            .unwrap();
+        tx.send(json!({"event": "log-message", "prefix": "ffmpeg",
+            "text": "https: HTTP error 403 Forbidden"}))
+            .unwrap();
+        drop(tx);
+
+        let (events, received) = mpsc::channel();
+        forward_events(rx, |event| events.send(event).unwrap());
+        assert!(
+            matches!(received.recv().unwrap(), PlayerEvent::LoadError(msg)
+            if msg == "HTTP 403 Forbidden")
+        );
     }
 }

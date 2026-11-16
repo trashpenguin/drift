@@ -37,8 +37,8 @@ USAGE:
 
 Inside the player press ? for key bindings and :help for commands.";
 
-fn tool_version(name: &str) -> Option<String> {
-    let mut cmd = Command::new(name);
+fn tool_version(path: &std::path::Path) -> Option<String> {
+    let mut cmd = Command::new(path);
     cmd.arg("--version")
         .stdin(Stdio::null())
         .stderr(Stdio::null());
@@ -58,17 +58,20 @@ fn missing_dependencies(verbose: bool) -> Vec<String> {
     for (tool, hint) in [
         (
             "mpv",
-            "sudo apt install mpv | brew install mpv | sudo pacman -S mpv | winget install mpv.net / scoop install mpv",
+            "sudo apt install mpv | brew install mpv | sudo pacman -S mpv | scoop install mpv",
         ),
         (
             "yt-dlp",
             "pipx install yt-dlp | brew install yt-dlp | sudo pacman -S yt-dlp | winget install yt-dlp.yt-dlp / scoop install yt-dlp",
         ),
     ] {
-        match tool_version(tool) {
-            Some(v) => {
+        let found = sys::program_path(tool)
+            .and_then(|path| tool_version(&path).map(|version| (path, version)));
+        match found {
+            Some((path, version)) => {
                 if verbose {
-                    println!("ok       {tool}: {v}");
+                    println!("ok       {tool}: {version}");
+                    println!("         {}", path.display());
                 }
             }
             None => {

@@ -1,4 +1,4 @@
-use std::process::{Command, Stdio};
+use std::process::Stdio;
 use std::sync::OnceLock;
 use std::time::{Duration, SystemTime, UNIX_EPOCH};
 
@@ -574,7 +574,7 @@ fn ytdlp_search(query: &str) -> Result<Vec<Track>> {
 }
 
 fn ytdlp_entries(target: &str) -> Result<Vec<Track>> {
-    let mut cmd = Command::new("yt-dlp");
+    let mut cmd = crate::sys::command("yt-dlp");
     cmd.args([
         "--flat-playlist",
         "--dump-json",

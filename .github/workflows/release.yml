@@ -22,6 +22,7 @@ jobs:
           - { os: ubuntu-24.04-arm, target: aarch64-unknown-linux-gnu }
           - { os: macos-latest, target: x86_64-apple-darwin }
           - { os: macos-latest, target: aarch64-apple-darwin }
+          - { os: windows-latest, target: x86_64-pc-windows-msvc }
 
     steps:
       - uses: actions/checkout@v7
@@ -33,6 +34,7 @@ jobs:
         run: cargo build --release --locked --target ${{ matrix.target }}
 
       - name: Package
+        if: runner.os != 'Windows'
         shell: bash
         run: |
           name="drift-${GITHUB_REF_NAME}-${{ matrix.target }}"
@@ -45,10 +47,21 @@ jobs:
             shasum -a 256 "$name.tar.gz" > "$name.tar.gz.sha256"
           fi
 
+      - name: Package Windows
+        if: runner.os == 'Windows'
+        shell: pwsh
+        run: |
+          $name = "drift-${env:GITHUB_REF_NAME}-${{ matrix.target }}"
+          ./scripts/package-windows.ps1 -Binary "target/${{ matrix.target }}/release/drift.exe" -Archive "$name.zip"
+          ./scripts/package-setup.ps1 -Package "$name.zip" -Installer "$name-setup.exe" -Version ($env:GITHUB_REF_NAME -replace '^v', '')
+
       - uses: actions/upload-artifact@v7
         with:
           name: drift-${{ matrix.target }}
-          path: drift-*.tar.gz*
+          path: |
+            drift-*.tar.gz*
+            drift-*.zip*
+            drift-*-setup.exe*
 
   release:
     name: Publish release

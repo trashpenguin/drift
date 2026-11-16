@@ -287,7 +287,8 @@ pub struct App {
     played: HashSet<usize>,
     radio_played: HashSet<usize>,
     resume_radio: bool,
-    fail_streak: u8,
+    retry_stream: bool,
+    playback_failed: bool,
     want: Option<String>,
     fetching: Option<String>,
     resolving: Option<String>,
@@ -402,7 +403,8 @@ impl App {
             played: HashSet::new(),
             radio_played: HashSet::new(),
             resume_radio: false,
-            fail_streak: 0,
+            retry_stream: false,
+            playback_failed: false,
             want: None,
             fetching: None,
             resolving: None,
@@ -499,9 +501,10 @@ impl App {
     }
 
     pub fn visible_status(&self) -> Option<&Status> {
-        self.status
-            .as_ref()
-            .filter(|s| s.at.elapsed().as_secs() < if s.level == Level::Error { 12 } else { 6 })
+        self.status.as_ref().filter(|s| {
+            (self.playback_failed && s.level == Level::Error)
+                || s.at.elapsed().as_secs() < if s.level == Level::Error { 12 } else { 6 }
+        })
     }
 
     pub fn on_tick(&mut self) {
@@ -2092,7 +2095,7 @@ impl App {
             PlayerEvent::Volume(v) => self.volume = v.round().clamp(0.0, 130.0) as u8,
             PlayerEvent::FileLoaded => {
                 self.play_state = PlayState::Playing;
-                self.fail_streak = 0;
+                self.retry_stream = false;
                 self.record_play();
                 self.prefetch_next();
                 if let Some((id, pos)) = self.resume.take() {
@@ -2111,17 +2114,24 @@ impl App {
                 }
             }
             PlayerEvent::LoadError(msg) => {
-                let name = self.now_track().map(Track::label).unwrap_or_default();
-                self.fail_streak += 1;
-                if self.fail_streak >= 3 {
-                    self.stop_playback();
-                    self.error(format!("Playback failed 3 times in a row: {msg}"));
-                } else {
-                    self.error(format!(
-                        "Can't play \u{201c}{name}\u{201d} ({msg}) — skipping"
-                    ));
-                    self.advance(true);
+                if let Some(id) = self.now_track().map(|t| t.id.clone()) {
+                    player::invalidate_stream(&id);
+                    if std::mem::take(&mut self.retry_stream) {
+                        self.play_state = PlayState::Loading;
+                        self.want = Some(id.clone());
+                        self.info("Playback failed. Refreshing the stream and retrying…");
+                        self.resolve_stream(&id);
+                        return;
+                    }
                 }
+                self.stop_playback();
+                self.playback_failed = true;
+                let cause = if player::is_http_forbidden(&msg) {
+                    "HTTP 403 Forbidden. Check yt-dlp with drift --check.".into()
+                } else {
+                    format!("Playback failed: {msg}")
+                };
+                self.error(format!("{cause}\n:play to retry · :next to skip"));
             }
             PlayerEvent::Died => {
                 self.player = None;
@@ -2158,13 +2168,18 @@ impl App {
     }
 
     fn load_track(&mut self, id: &str, duration: Option<u32>) {
+        self.playback_failed = false;
+        self.retry_stream = false;
         self.want = Some(id.to_string());
         /* boot mpv while the stream URL resolves */
         let _ = self.ensure_player();
         match player::cached_audio(id) {
             Some(path) => self.on_audio(id.to_string(), Ok(path)),
             None if self.audio.should_download(duration) => self.fetch_audio(id),
-            None => self.resolve_stream(id),
+            None => {
+                self.retry_stream = true;
+                self.resolve_stream(id);
+            }
         }
     }
 
@@ -2273,6 +2288,15 @@ impl App {
                 return self.info("Already playing (use :next, :pause, or :play N)");
             }
             PlayState::Stopped => {}
+        }
+        if self.playback_failed {
+            if self.on_radio {
+                if let Some(i) = self.result_cursor {
+                    return self.play_radio(i);
+                }
+            } else if let Some(i) = self.current {
+                return self.play_index(i);
+            }
         }
         if self.queue.is_empty() {
             match self.view {
@@ -2406,6 +2430,8 @@ impl App {
     }
 
     fn stop_playback(&mut self) {
+        self.retry_stream = false;
+        self.playback_failed = false;
         self.want = None;
         self.resume = None;
         if let Some(p) = self.player.as_mut() {
@@ -3224,7 +3250,7 @@ mod tests {
         app.play_state = PlayState::Loading;
         app.position = 0.0;
         app.duration = 100.0;
-        app.fail_streak = 0;
+        app.retry_stream = false;
         let recorded = app.history_data.entries.len();
         app.on_player(PlayerEvent::EndOfFile);
         app.on_player(PlayerEvent::Position(Some(90.0)));
@@ -3234,8 +3260,8 @@ mod tests {
         assert_eq!(app.current, Some(0));
         assert!(app.play_state == PlayState::Loading);
         assert_eq!(
-            (app.position, app.duration, app.fail_streak),
-            (0.0, 100.0, 0)
+            (app.position, app.duration, app.retry_stream),
+            (0.0, 100.0, false)
         );
         assert_eq!(app.history_data.entries.len(), recorded);
 
@@ -3248,6 +3274,26 @@ mod tests {
         assert!(app.play_state == PlayState::Stopped);
         assert!(app.want.is_none() && app.resume.is_none());
         assert_eq!(app.history_data.entries.len(), recorded);
+
+        app.play_state = PlayState::Loading;
+        app.retry_stream = true;
+        // Simulate the resolver without making a network request.
+        app.resolving = Some("aaaaaaaaaaa".into());
+        app.on_player(PlayerEvent::LoadError("HTTP Error 403 Forbidden".into()));
+        assert_eq!(app.want.as_deref(), Some("aaaaaaaaaaa"));
+        assert!(!app.retry_stream);
+        assert_eq!(app.current, Some(0));
+        app.on_player(PlayerEvent::LoadError("old mpv event".into()));
+        assert!(app.play_state == PlayState::Loading);
+        app.on_stream("aaaaaaaaaaa".into(), Err("HTTP 403 Forbidden".into()));
+        assert!(app.play_state == PlayState::Stopped);
+        assert!(app.playback_failed);
+        assert_eq!(app.current, Some(0));
+        let status = &app.visible_status().unwrap().text;
+        assert!(status.contains("drift --check"));
+        assert!(status.contains(":play to retry"));
+        assert!(status.contains(":next to skip"));
+        app.stop_playback();
     }
 
     fn check_playlist_playback(app: &mut App) {

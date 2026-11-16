@@ -1327,28 +1327,41 @@ fn draw_toast(f: &mut Frame, app: &App, body: Rect) {
         Level::Info => ("●", Color::Green),
     };
     let max_text = (body.width as usize).saturating_sub(8).min(120);
-    let mut text: String = s.text.lines().next().unwrap_or("").to_string();
-    if text.chars().count() > max_text {
-        text = text
-            .chars()
-            .take(max_text.saturating_sub(1))
-            .collect::<String>()
-            + "…";
-    }
-    let w = (text.chars().count() as u16 + 6).min(body.width);
+    let mut width = 0;
+    let lines: Vec<_> = s
+        .text
+        .lines()
+        .take(usize::from(body.height - 3))
+        .enumerate()
+        .map(|(i, line)| {
+            let text = if line.chars().count() > max_text {
+                line.chars().take(max_text - 1).collect::<String>() + "…"
+            } else {
+                line.to_string()
+            };
+            width = width.max(text.chars().count());
+            let marker = if i == 0 {
+                format!(" {icon} ")
+            } else {
+                "   ".into()
+            };
+            Line::from(vec![
+                Span::styled(marker, Style::new().fg(color).bold()),
+                Span::styled(text, Style::new().fg(Color::White)),
+            ])
+        })
+        .collect();
+    let w = (width as u16 + 6).min(body.width);
+    let height = lines.len() as u16 + 2;
     let rect = Rect::new(
         body.right().saturating_sub(w + 1).max(body.x),
-        body.bottom().saturating_sub(4),
+        body.bottom().saturating_sub(height + 1),
         w,
-        3,
+        height,
     );
     f.render_widget(Clear, rect);
     f.render_widget(
-        Paragraph::new(Line::from(vec![
-            Span::styled(format!(" {icon} "), Style::new().fg(color).bold()),
-            Span::styled(text, Style::new().fg(Color::White)),
-        ]))
-        .block(
+        Paragraph::new(lines).block(
             Block::bordered()
                 .border_type(BorderType::Rounded)
                 .border_style(Style::new().fg(color)),
