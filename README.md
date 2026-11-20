@@ -69,7 +69,7 @@ Drift needs [mpv](https://mpv.io/) for playback and [yt-dlp](https://github.com/
 
 ### Windows Terminal
 
-Run the Windows x64 setup executable to install Drift, mpv, and yt-dlp for your
+Run the Windows x64 setup executable from this repository's Releases page to install Drift, mpv, and yt-dlp for your
 account. Start Drift from the Start menu or run `drift.exe` from its install
 folder. See the [Windows guide](docs/windows.md) for setup and uninstall steps.
 
@@ -371,6 +371,8 @@ In the Playlists tab `seek_forward` opens the selected playlist, and `seek_back`
 ## Troubleshooting
 
 **Drift says mpv or yt-dlp is missing.** Run `drift --check` to see which one, and install it with the table in [Installing mpv and yt-dlp manually](#installing-mpv-and-yt-dlp-manually).
+
+**Playback fails with HTTP 403.** Drift refreshes the stream URL once. Run `drift --check` to inspect dependency versions and paths. Update yt-dlp if needed, then use `:play` to retry or `:next` to skip.
 
 **Playback fails with "Sign in to confirm you're not a bot".** YouTube wants a login. Set `cookies_from_browser` under `[audio]` to a browser you're logged into YouTube with (for example `"firefox"`), then restart Drift. Updating yt-dlp also helps, since YouTube changes things often.
 
